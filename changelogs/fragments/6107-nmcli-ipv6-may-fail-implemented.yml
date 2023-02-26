@@ -1,0 +1,2 @@
+minor_changes:
+  - nmcli - added new option 'may_fail6'. 'may_fail' was implemented for IPv4 but not for IPv6 (https://github.com/ansible-collections/community.general/pull/6107).
