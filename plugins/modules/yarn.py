@@ -20,6 +20,13 @@ description:
 author:
   - "David Gunter (@verkaufer)"
   - "Chris Hoffman (@chrishoffman), creator of NPM Ansible module)"
+extends_documentation_fragment:
+  - community.general.attributes
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: none
 options:
   name:
     type: str
@@ -172,14 +179,10 @@ class Yarn(object):
         self.registry = kwargs['registry']
         self.production = kwargs['production']
         self.ignore_scripts = kwargs['ignore_scripts']
+        self.executable = kwargs['executable']
 
         # Specify a version of package if version arg passed in
         self.name_version = None
-
-        if kwargs['executable']:
-            self.executable = kwargs['executable'].split(' ')
-        else:
-            self.executable = [module.get_bin_path('yarn', True)]
 
         if kwargs['version'] and self.name is not None:
             self.name_version = self.name + '@' + str(self.version)
@@ -223,6 +226,15 @@ class Yarn(object):
 
         return None, None
 
+    def _process_yarn_error(self, err):
+        try:
+            # We need to filter for errors, since Yarn warnings are included in stderr
+            for line in err.splitlines():
+                if json.loads(line)['type'] == 'error':
+                    self.module.fail_json(msg=err)
+        except Exception:
+            self.module.fail_json(msg="Unexpected stderr output from Yarn: %s" % err, stderr=err)
+
     def list(self):
         cmd = ['list', '--depth=0', '--json']
 
@@ -237,8 +249,7 @@ class Yarn(object):
         # because it only only lists binaries, but `yarn global add` can install libraries too.
         result, error = self._exec(cmd, run_in_check_mode=True, check_rc=False, unsupported_with_global=True)
 
-        if error:
-            self.module.fail_json(msg=error)
+        self._process_yarn_error(error)
 
         for json_line in result.strip().split('\n'):
             data = json.loads(json_line)
@@ -276,9 +287,7 @@ class Yarn(object):
         cmd_result, err = self._exec(['outdated', '--json'], True, False, unsupported_with_global=True)
 
         # the package.json in the global dir is missing a license field, so warnings are expected on stderr
-        for line in err.splitlines():
-            if json.loads(line)['type'] == 'error':
-                self.module.fail_json(msg=err)
+        self._process_yarn_error(err)
 
         if not cmd_result:
             return outdated
@@ -321,7 +330,6 @@ def main():
     version = module.params['version']
     globally = module.params['global']
     production = module.params['production']
-    executable = module.params['executable']
     registry = module.params['registry']
     state = module.params['state']
     ignore_scripts = module.params['ignore_scripts']
@@ -338,9 +346,14 @@ def main():
     if state == 'latest':
         version = 'latest'
 
+    if module.params['executable']:
+        executable = module.params['executable'].split(' ')
+    else:
+        executable = [module.get_bin_path('yarn', True)]
+
     # When installing globally, use the defined path for global node_modules
     if globally:
-        _rc, out, _err = module.run_command([executable, 'global', 'dir'], check_rc=True)
+        _rc, out, _err = module.run_command(executable + ['global', 'dir'], check_rc=True)
         path = out.strip()
 
     yarn = Yarn(module,

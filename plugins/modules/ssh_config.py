@@ -8,6 +8,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from __future__ import absolute_import, division, print_function
+
 __metaclass__ = type
 
 DOCUMENTATION = r'''
@@ -83,7 +84,14 @@ options:
   proxycommand:
     description:
       - Sets the C(ProxyCommand) option.
+      - Mutually exclusive with I(proxyjump).
     type: str
+  proxyjump:
+    description:
+      - Sets the C(ProxyJump) option.
+      - Mutually exclusive with I(proxycommand).
+    type: str
+    version_added: 6.5.0
   forward_agent:
     description:
       - Sets the C(ForwardAgent) option.
@@ -101,7 +109,7 @@ options:
     type: str
     version_added: 6.1.0
 requirements:
-- StormSSH
+- paramiko
 '''
 
 EXAMPLES = r'''
@@ -160,26 +168,20 @@ hosts_change_diff:
 '''
 
 import os
-import traceback
 
 from copy import deepcopy
 
-STORM_IMP_ERR = None
-try:
-    from storm.parsers.ssh_config_parser import ConfigParser
-    HAS_STORM = True
-except ImportError:
-    HAS_STORM = False
-    STORM_IMP_ERR = traceback.format_exc()
-
 from ansible.module_utils.basic import AnsibleModule, missing_required_lib
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.community.general.plugins.module_utils._stormssh import ConfigParser, HAS_PARAMIKO, PARAMIKO_IMPORT_ERROR
 from ansible_collections.community.general.plugins.module_utils.ssh import determine_config_file
 
 
-class SSHConfig():
+class SSHConfig(object):
     def __init__(self, module):
         self.module = module
+        if not HAS_PARAMIKO:
+            module.fail_json(msg=missing_required_lib('PARAMIKO'), exception=PARAMIKO_IMPORT_ERROR)
         self.params = module.params
         self.user = self.params.get('user')
         self.group = self.params.get('group') or self.user
@@ -215,6 +217,7 @@ class SSHConfig():
             strict_host_key_checking=self.params.get('strict_host_key_checking'),
             user_known_hosts_file=self.params.get('user_known_hosts_file'),
             proxycommand=self.params.get('proxycommand'),
+            proxyjump=self.params.get('proxyjump'),
             host_key_algorithms=self.params.get('host_key_algorithms'),
         )
 
@@ -265,7 +268,8 @@ class SSHConfig():
             try:
                 self.config.write_to_ssh_config()
             except PermissionError as perm_exec:
-                self.module.fail_json(msg="Failed to write to %s due to permission issue: %s" % (self.config_file, to_native(perm_exec)))
+                self.module.fail_json(
+                    msg="Failed to write to %s due to permission issue: %s" % (self.config_file, to_native(perm_exec)))
             # Make sure we set the permission
             perm_mode = '0600'
             if self.config_file == '/etc/ssh/ssh_config':
@@ -310,6 +314,7 @@ def main():
             identity_file=dict(type='path'),
             port=dict(type='str'),
             proxycommand=dict(type='str', default=None),
+            proxyjump=dict(type='str', default=None),
             forward_agent=dict(type='bool'),
             remote_user=dict(type='str'),
             ssh_config_file=dict(default=None, type='path'),
@@ -324,12 +329,9 @@ def main():
         supports_check_mode=True,
         mutually_exclusive=[
             ['user', 'ssh_config_file'],
+            ['proxycommand', 'proxyjump'],
         ],
     )
-
-    if not HAS_STORM:
-        module.fail_json(changed=False, msg=missing_required_lib("stormssh"),
-                         exception=STORM_IMP_ERR)
 
     ssh_config_obj = SSHConfig(module)
     ssh_config_obj.ensure_state()

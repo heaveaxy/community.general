@@ -241,6 +241,8 @@ files:
   $lookups/manifold.py:
     labels: manifold
     maintainers: galanoff
+  $lookups/merge_variables.py:
+    maintainers: rlenferink m-a-r-k-e
   $lookups/onepass:
     labels: onepassword
     maintainers: samdoran
@@ -294,7 +296,6 @@ files:
     maintainers: $team_manageiq
   $module_utils/memset.py:
     labels: cloud memset
-    maintainers: glitchcrab
   $module_utils/mh/:
     labels: module_helper
     maintainers: russoz
@@ -665,6 +666,8 @@ files:
     ignore: DWSR
     labels: jira
     maintainers: Slezhuk tarka pertoft
+  $modules/kdeconfig.py:
+    maintainers: smeso
   $modules/kernel_blacklist.py:
     maintainers: matze
   $modules/keycloak_:
@@ -783,7 +786,7 @@ files:
     labels: maven_artifact
     maintainers: tumbl3w33d turb
   $modules/memset_:
-    maintainers: glitchcrab
+    ignore: glitchcrab
   $modules/mksysb.py:
     labels: aix mksysb
     maintainers: $team_aix
@@ -1314,7 +1317,7 @@ files:
     labels: m:xml xml
     maintainers: dagwieers magnus919 tbielawa cmprescott sm4rk0
   $modules/yarn.py:
-    maintainers: chrishoffman verkaufer
+    ignore: chrishoffman verkaufer
   $modules/yum_versionlock.py:
     maintainers: gyptazy aminvakil
   $modules/zfs:
@@ -1388,7 +1391,7 @@ macros:
   team_opennebula: ilicmilan meerkampdvv rsmontero xorel nilsding
   team_oracle: manojmeda mross22 nalsaber
   team_purestorage: bannaych dnix101 genegr lionmax opslounge raekins sdodsley sile16
-  team_redfish: mraineri tomasg2012 xmadsen renxulei rajeevkallur bhavya06
+  team_redfish: mraineri tomasg2012 xmadsen renxulei rajeevkallur bhavya06 jyundt
   team_rhn: FlossWare alikins barnabycourt vritant
   team_scaleway: remyleone abarbare
   team_solaris: bcoca fishman jasperla jpdasma mator scathatheworm troy2914 xen0l

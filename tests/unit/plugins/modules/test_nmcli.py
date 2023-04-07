@@ -602,6 +602,7 @@ ipv6.method:                            auto
 ipv6.ignore-auto-dns:                   no
 ipv6.ignore-auto-routes:                no
 team.runner:                            roundrobin
+team.runner-fast-rate:                  no
 """
 
 TESTCASE_TEAM_HWADDR_POLICY_FAILS = [
@@ -614,6 +615,71 @@ TESTCASE_TEAM_HWADDR_POLICY_FAILS = [
         '_ansible_check_mode': False,
     }
 ]
+
+TESTCASE_TEAM_RUNNER_FAST_RATE = [
+    {
+        'type': 'team',
+        'conn_name': 'non_existent_nw_device',
+        'ifname': 'team0_non_existant',
+        'runner': 'lacp',
+        'runner_fast_rate': True,
+        'state': 'present',
+        '_ansible_check_mode': False,
+    }
+]
+
+TESTCASE_TEAM_RUNNER_FAST_RATE_FAILS = [
+    {
+        'type': 'team',
+        'conn_name': 'non_existent_nw_device',
+        'ifname': 'team0_non_existant',
+        'runner_fast_rate': True,
+        'state': 'present',
+        '_ansible_check_mode': False,
+    },
+    {
+        'type': 'team',
+        'conn_name': 'non_existent_nw_device',
+        'ifname': 'team0_non_existant',
+        'state': 'present',
+        'runner_fast_rate': False,
+        '_ansible_check_mode': False,
+    },
+    {
+        'type': 'team',
+        'conn_name': 'non_existent_nw_device',
+        'ifname': 'team0_non_existant',
+        'state': 'present',
+        'runner': 'activebackup',
+        'runner_fast_rate': False,
+        '_ansible_check_mode': False,
+    },
+    {
+        'type': 'team',
+        'conn_name': 'non_existent_nw_device',
+        'ifname': 'team0_non_existant',
+        'state': 'present',
+        'runner': 'activebackup',
+        'runner_fast_rate': True,
+        '_ansible_check_mode': False,
+    }
+]
+
+TESTCASE_TEAM_RUNNER_FAST_RATE_SHOW_OUTPUT = """\
+connection.id:                          non_existent_nw_device
+connection.interface-name:              team0_non_existant
+connection.autoconnect:                 yes
+connection.type:                        team
+ipv4.ignore-auto-dns:                   no
+ipv4.ignore-auto-routes:                no
+ipv4.never-default:                     no
+ipv4.may-fail:                          yes
+ipv6.method:                            auto
+ipv6.ignore-auto-dns:                   no
+ipv6.ignore-auto-routes:                no
+team.runner:                            lacp
+team.runner-fast-rate:                  yes
+"""
 
 TESTCASE_TEAM_SLAVE = [
     {
@@ -663,6 +729,7 @@ ipv6.method:                            auto
 ipv6.ignore-auto-dns:                   no
 ipv6.ignore-auto-routes:                no
 vlan.id:                                10
+802-3-ethernet.mtu:                     auto
 """
 
 TESTCASE_VXLAN = [
@@ -1433,6 +1500,13 @@ def mocked_team_connection_unchanged(mocker):
     mocker_set(mocker,
                connection_exists=True,
                execute_return=(0, TESTCASE_TEAM_SHOW_OUTPUT, ""))
+
+
+@pytest.fixture
+def mocked_team_runner_fast_rate_connection_unchanged(mocker):
+    mocker_set(mocker,
+               connection_exists=True,
+               execute_return=(0, TESTCASE_TEAM_RUNNER_FAST_RATE_SHOW_OUTPUT, ""))
 
 
 @pytest.fixture
@@ -2244,6 +2318,63 @@ def test_team_connection_create_hwaddr_policy_fails(mocked_generic_connection_cr
     results = json.loads(out)
     assert results.get('failed')
     assert results['msg'] == "Runner-hwaddr-policy is only allowed for runner activebackup"
+
+
+@pytest.mark.parametrize('patch_ansible_module', TESTCASE_TEAM_RUNNER_FAST_RATE, indirect=['patch_ansible_module'])
+def test_team_runner_fast_rate_connection_create(mocked_generic_connection_create, capfd):
+    """
+    Test : Team connection created with runner_fast_rate parameter
+    """
+    with pytest.raises(SystemExit):
+        nmcli.main()
+
+    assert nmcli.Nmcli.execute_command.call_count == 1
+    arg_list = nmcli.Nmcli.execute_command.call_args_list
+    args, kwargs = arg_list[0]
+
+    assert args[0][0] == '/usr/bin/nmcli'
+    assert args[0][1] == 'con'
+    assert args[0][2] == 'add'
+    assert args[0][3] == 'type'
+    assert args[0][4] == 'team'
+    assert args[0][5] == 'con-name'
+    assert args[0][6] == 'non_existent_nw_device'
+
+    for param in ['connection.autoconnect', 'connection.interface-name', 'team0_non_existant', 'team.runner', 'lacp', 'team.runner-fast-rate', 'yes']:
+        assert param in args[0]
+
+    out, err = capfd.readouterr()
+    results = json.loads(out)
+    assert not results.get('failed')
+    assert results['changed']
+
+
+@pytest.mark.parametrize('patch_ansible_module', TESTCASE_TEAM_RUNNER_FAST_RATE, indirect=['patch_ansible_module'])
+def test_team_runner_fast_rate_connection_unchanged(mocked_team_runner_fast_rate_connection_unchanged, capfd):
+    """
+    Test : Team connection unchanged with runner_fast_rate parameter
+    """
+    with pytest.raises(SystemExit):
+        nmcli.main()
+
+    out, err = capfd.readouterr()
+    results = json.loads(out)
+    assert not results.get('failed')
+    assert not results['changed']
+
+
+@pytest.mark.parametrize('patch_ansible_module', TESTCASE_TEAM_RUNNER_FAST_RATE_FAILS, indirect=['patch_ansible_module'])
+def test_team_connection_create_runner_fast_rate_fails(mocked_generic_connection_create, capfd):
+    """
+    Test : Team connection with runner_fast_rate enabled
+    """
+    with pytest.raises(SystemExit):
+        nmcli.main()
+
+    out, err = capfd.readouterr()
+    results = json.loads(out)
+    assert results.get('failed')
+    assert results['msg'] == "runner-fast-rate is only allowed for runner lacp"
 
 
 @pytest.mark.parametrize('patch_ansible_module', TESTCASE_TEAM_SLAVE, indirect=['patch_ansible_module'])
@@ -3917,7 +4048,7 @@ def test_bond_connection_unchanged(mocked_generic_connection_diff_check, capfd):
             route_metric6=dict(type='int'),
             method6=dict(type='str', choices=['ignore', 'auto', 'dhcp', 'link-local', 'manual', 'shared', 'disabled']),
             ip_privacy6=dict(type='str', choices=['disabled', 'prefer-public-addr', 'prefer-temp-addr', 'unknown']),
-            addr_gen_mode6=dict(type='str', choices=['eui64', 'stable-privacy']),
+            addr_gen_mode6=dict(type='str', choices=['default', 'default-or-eui64', 'eui64', 'stable-privacy']),
             # Bond Specific vars
             mode=dict(type='str', default='balance-rr',
                       choices=['802.3ad', 'active-backup', 'balance-alb', 'balance-rr', 'balance-tlb', 'balance-xor', 'broadcast']),
@@ -3947,6 +4078,8 @@ def test_bond_connection_unchanged(mocked_generic_connection_diff_check, capfd):
                              choices=['broadcast', 'roundrobin', 'activebackup', 'loadbalance', 'lacp']),
             # team active-backup runner specific options
             runner_hwaddr_policy=dict(type='str', choices=['same_all', 'by_active', 'only_active']),
+            # team lacp runner specific options
+            runner_fast_rate=dict(type='bool'),
             # vlan specific vars
             vlanid=dict(type='int'),
             vlandev=dict(type='str'),

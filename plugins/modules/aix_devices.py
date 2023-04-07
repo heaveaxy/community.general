@@ -16,6 +16,13 @@ module: aix_devices
 short_description: Manages AIX devices
 description:
 - This module discovers, defines, removes and modifies attributes of AIX devices.
+extends_documentation_fragment:
+  - community.general.attributes
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: none
 options:
   attributes:
     description:
@@ -101,7 +108,7 @@ EXAMPLES = r'''
     device: en1
     attributes:
       mtu: 900
-      arp: off
+      arp: 'off'
     state: available
 
 - name: Configure IP, netmask and set en1 up.

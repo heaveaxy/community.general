@@ -206,6 +206,7 @@ options:
     may_fail4:
         description:
             - If you need I(ip4) configured before C(network-online.target) is reached, set this option to C(false).
+            - This option applies when C(method4) is not C(disabled).
         type: bool
         default: true
         version_added: 3.3.0
@@ -311,8 +312,9 @@ options:
     addr_gen_mode6:
         description:
             - Configure method for creating the address for use with IPv6 Stateless Address Autoconfiguration.
+            - C(default) and C(deafult-or-eui64) have been added in community.general 6.5.0.
         type: str
-        choices: [eui64, stable-privacy]
+        choices: [default, default-or-eui64, eui64, stable-privacy]
         version_added: 4.2.0
     mtu:
         description:
@@ -420,6 +422,14 @@ options:
         type: str
         choices: [ same_all, by_active, only_active ]
         version_added: 3.4.0
+    runner_fast_rate:
+        description:
+            - Option specifies the rate at which our link partner is asked to transmit LACPDU
+              packets. If this is C(true) then packets will be sent once per second. Otherwise they
+              will be sent every 30 seconds.
+            - Only allowed for C(lacp) runner.
+        type: bool
+        version_added: 6.5.0
     vlanid:
         description:
             - This is only used with VLAN - VLAN ID in range <0-4095>.
@@ -977,7 +987,6 @@ options:
                     - Enable or disable IPSec tunnel to L2TP host.
                     - This option is need when C(service-type) is C(org.freedesktop.NetworkManager.l2tp).
                 type: bool
-                choices: [ yes, no ]
             ipsec-psk:
                 description:
                     - The pre-shared key in base64 encoding.
@@ -1515,6 +1524,7 @@ class Nmcli(object):
         self.mac = module.params['mac']
         self.runner = module.params['runner']
         self.runner_hwaddr_policy = module.params['runner_hwaddr_policy']
+        self.runner_fast_rate = module.params['runner_fast_rate']
         self.vlanid = module.params['vlanid']
         self.vlandev = module.params['vlandev']
         self.flags = module.params['flags']
@@ -1619,6 +1629,10 @@ class Nmcli(object):
                 'ipv6.ip6-privacy': self.ip_privacy6,
                 'ipv6.addr-gen-mode': self.addr_gen_mode6
             })
+            # when 'method' is disabled the 'may_fail' no make sense but accepted by nmcli with keeping 'yes'
+            # force ignoring to save idempotency
+            if self.ipv4_method and self.ipv4_method != 'disabled':
+                options.update({'ipv4.may-fail': self.may_fail4})
 
         # Layer 2 options.
         if self.mac:
@@ -1667,11 +1681,19 @@ class Nmcli(object):
                 'bridge.priority': self.priority,
                 'bridge.stp': self.stp,
             })
+            # priority make sense when stp enabed, otherwise nmcli keeps bridge-priority to 32768 regrdless of input.
+            # force ignoring to save idempotency
+            if self.stp:
+                options.update({'bridge.priority': self.priority})
         elif self.type == 'team':
             options.update({
                 'team.runner': self.runner,
                 'team.runner-hwaddr-policy': self.runner_hwaddr_policy,
             })
+            if self.runner_fast_rate is not None:
+                options.update({
+                    'team.runner-fast-rate': self.runner_fast_rate,
+                })
         elif self.type == 'bridge-slave':
             if self.slave_type and self.slave_type != 'bridge':
                 self.module.fail_json(msg="Connection type '%s' cannot be combined with '%s' slave-type. "
@@ -1844,6 +1866,7 @@ class Nmcli(object):
             'dummy',
             'ethernet',
             'team-slave',
+            'vlan',
         )
 
     @property
@@ -1957,7 +1980,8 @@ class Nmcli(object):
                        'ipv4.may-fail',
                        'ipv6.ignore-auto-dns',
                        'ipv6.ignore-auto-routes',
-                       '802-11-wireless.hidden'):
+                       '802-11-wireless.hidden',
+                       'team.runner-fast-rate'):
             return bool
         elif setting in ('ipv4.addresses',
                          'ipv6.addresses',
@@ -2185,11 +2209,18 @@ class Nmcli(object):
         diff_after = dict()
 
         for key, value in options.items():
-            if not value:
+            # We can't just do `if not value` because then if there's a value
+            # of 0 specified as an integer it'll be interpreted as empty when
+            # it actually isn't.
+            if value != 0 and not value:
                 continue
 
             if key in conn_info:
                 current_value = conn_info[key]
+                if key == '802-11-wireless.wake-on-wlan' and current_value is not None:
+                    match = re.match('0x([0-9A-Fa-f]+)', current_value)
+                    if match:
+                        current_value = str(int(match.group(1), 16))
                 if key in ('ipv4.routes', 'ipv6.routes') and current_value is not None:
                     current_value = self.get_route_params(current_value)
                 if key == self.mac_setting:
@@ -2215,8 +2246,12 @@ class Nmcli(object):
 
             if isinstance(current_value, list) and isinstance(value, list):
                 # compare values between two lists
-                if sorted(current_value) != sorted(value):
-                    changed = True
+                if key in ('ipv4.addresses', 'ipv6.addresses'):
+                    # The order of IP addresses matters because the first one
+                    # is the default source address for outbound connections.
+                    changed |= current_value != value
+                else:
+                    changed |= sorted(current_value) != sorted(value)
             elif all([key == self.mtu_setting, self.type == 'dummy', current_value is None, value == 'auto', self.mtu is None]):
                 value = None
             else:
@@ -2245,6 +2280,8 @@ class Nmcli(object):
         if not self.type:
             current_con_type = self.show_connection().get('connection.type')
             if current_con_type:
+                if current_con_type == '802-11-wireless':
+                    current_con_type = 'wifi'
                 self.type = current_con_type
 
         options.update(self.connection_options(detect_change=True))
@@ -2330,7 +2367,7 @@ def main():
             route_metric6=dict(type='int'),
             method6=dict(type='str', choices=['ignore', 'auto', 'dhcp', 'link-local', 'manual', 'shared', 'disabled']),
             ip_privacy6=dict(type='str', choices=['disabled', 'prefer-public-addr', 'prefer-temp-addr', 'unknown']),
-            addr_gen_mode6=dict(type='str', choices=['eui64', 'stable-privacy']),
+            addr_gen_mode6=dict(type='str', choices=['default', 'default-or-eui64', 'eui64', 'stable-privacy']),
             # Bond Specific vars
             mode=dict(type='str', default='balance-rr',
                       choices=['802.3ad', 'active-backup', 'balance-alb', 'balance-rr', 'balance-tlb', 'balance-xor', 'broadcast']),
@@ -2360,6 +2397,8 @@ def main():
                              choices=['broadcast', 'roundrobin', 'activebackup', 'loadbalance', 'lacp']),
             # team active-backup runner specific options
             runner_hwaddr_policy=dict(type='str', choices=['same_all', 'by_active', 'only_active']),
+            # team lacp runner specific options
+            runner_fast_rate=dict(type='bool'),
             # vlan specific vars
             vlanid=dict(type='int'),
             vlandev=dict(type='str'),
@@ -2407,6 +2446,8 @@ def main():
     if nmcli.type == "team":
         if nmcli.runner_hwaddr_policy and not nmcli.runner == "activebackup":
             nmcli.module.fail_json(msg="Runner-hwaddr-policy is only allowed for runner activebackup")
+        if nmcli.runner_fast_rate is not None and nmcli.runner != "lacp":
+            nmcli.module.fail_json(msg="runner-fast-rate is only allowed for runner lacp")
     # team-slave checks
     if nmcli.type == 'team-slave' or nmcli.slave_type == 'team':
         if nmcli.master is None:

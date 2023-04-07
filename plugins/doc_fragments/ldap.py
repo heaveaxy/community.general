@@ -24,6 +24,11 @@ options:
       - The password to use with I(bind_dn).
     type: str
     default: ''
+  ca_path:
+    description:
+      - Set the path to PEM file with CA certs.
+    type: path
+    version_added: "6.5.0"
   dn:
     required: true
     description:
@@ -65,4 +70,15 @@ options:
     choices: ['external', 'gssapi']
     default: external
     version_added: "2.0.0"
+  xorder_discovery:
+    description:
+      - Set the behavior on how to process Xordered DNs.
+      - C(enable) will perform a C(ONELEVEL) search below the superior RDN to find the matching DN.
+      - C(disable) will always use the DN unmodified (as passed by the I(dn) parameter).
+      - C(auto) will only perform a search if the first RDN does not contain an index number (C({x})).
+      - Possible choices are C(enable), C(auto), C(disable).
+    type: str
+    choices: ['enable', 'auto', 'disable']
+    default: auto
+    version_added: "6.4.0"
 '''

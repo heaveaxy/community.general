@@ -34,8 +34,15 @@ DOCUMENTATION = '''
             description: list of addresses to exclude
             type: list
             elements: string
+        port:
+            description:
+                - Only scan specific port or port range (C(-p)).
+                - For example, you could pass C(22) for a single port, C(1-65535) for a range of ports,
+                  or C(U:53,137,T:21-25,139,8080,S:9) to check port 53 with UDP, ports 21-25 with TCP, port 9 with SCTP, and ports 137, 139, and 8080 with all.
+            type: string
+            version_added: 6.5.0
         ports:
-            description: Enable/disable scanning for open ports
+            description: Enable/disable scanning ports.
             type: boolean
             default: true
         ipv4:
@@ -60,6 +67,11 @@ DOCUMENTATION = '''
             type: boolean
             default: false
             version_added: 6.1.0
+        open:
+            description: Only scan for open (or possibly open) ports.
+            type: boolean
+            default: false
+            version_added: 6.5.0
         dns_resolve:
             description: Whether to always (C(true)) or never (C(false)) do DNS resolution.
             type: boolean
@@ -81,6 +93,14 @@ plugin: community.general.nmap
 sudo: true
 strict: false
 address: 192.168.0.0/24
+
+# an nmap scan specifying ports and classifying results to an inventory group
+plugin: community.general.nmap
+address: 192.168.0.0/24
+exclude: 192.168.0.1, web.example.com
+port: 22, 443
+groups:
+  web_servers: "ports | selectattr('port', 'equalto', '443')"
 '''
 
 import os
@@ -171,6 +191,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             if self._options['sudo']:
                 cmd.insert(0, 'sudo')
 
+            if self._options['port']:
+                cmd.append('-p')
+                cmd.append(self._options['port'])
+
             if not self._options['ports']:
                 cmd.append('-sP')
 
@@ -193,6 +217,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
             if self._options['icmp_timestamp']:
                 cmd.append('-PP')
+
+            if self._options['open']:
+                cmd.append('--open')
 
             cmd.append(self._options['address'])
             try:
