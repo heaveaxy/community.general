@@ -1877,6 +1877,12 @@ class Nmcli(object):
     @property
     def slave_conn_type(self):
         return self.type in (
+            'ethertnet',
+            'bridge',
+            'bond',
+            'vlan',
+            'team',
+            'wifi',
             'bond-slave',
             'bridge-slave',
             'team-slave',
